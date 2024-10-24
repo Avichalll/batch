@@ -1,0 +1,39 @@
+# spring:
+#   application:
+#     name: batch
+#   datasource: 
+#     url: jdbc:postgresql://ep-patient-wave-a5nxrzt8.us-east-2.aws.neon.tech/neondb?sslmode=require
+#     username: neondb_owner
+#     password: ZJOUC8c0kHoV
+#     driver-class-name: org.postgresql.Driver
+
+
+
+spring:
+  datasource:
+    name: user_dashboard 
+    url: jdbc:mysql://localhost:3306/user_dashboard 
+    username: root
+    password: Avichalkumar
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+
+
+
+  jpa:
+    hibernate:
+      ddl-auto: create
+  batch:
+    jdbc:
+      initialize-schema: always
+
+server:
+  port: 9090
+
+application:
+  file: 
+    uploads: 
+      csv-file-path: ./uploads
+    
+
+# postgresql://neondb_owner:ZJOUC8c0kHoV@ep-patient-wave-a5nxrzt8.us-east-2.aws.neon.tech/neondb?sslmode=require
