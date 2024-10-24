@@ -1,6 +1,7 @@
 package com.batch_processing.batch.config;
 
 import org.springframework.batch.core.Job;
+import org.springframework.batch.core.SkipListener;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.job.builder.JobBuilder;
@@ -17,27 +18,26 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.lang.NonNull;
 import org.springframework.retry.policy.SimpleRetryPolicy;
 import org.springframework.retry.support.RetryTemplate;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import com.batch_processing.batch.student.Student;
 import com.batch_processing.batch.student.StudentRepository;
 
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Configuration
 @AllArgsConstructor
+@Slf4j
 public class BatchConfig {
 
-    // @Value("${application.file.uploads.csv-file-path}")
-    // private String filepath;
-
     public final JobRepository jobRepository;
-
     public final PlatformTransactionManager platformTransactionManager;
     @Autowired
     public final StudentRepository studentRepository;
@@ -45,16 +45,13 @@ public class BatchConfig {
     @Bean
     @StepScope
     public FlatFileItemReader<Student> itemReader(@Value("#{jobParameters['fullPathFileName']}") String dynamicPath) {
-
         FlatFileItemReader<Student> itemReader = new FlatFileItemReader<>();
         itemReader.setResource(new FileSystemResource(dynamicPath));
         itemReader.setName("csvReader");
         itemReader.setLinesToSkip(1);
         itemReader.setStrict(false);
         itemReader.setLineMapper(lineMapper());
-        // SynchronizedItemStreamReader<Student> synchronizedReader = new
-        // SynchronizedItemStreamReader<>();
-        // synchronizedReader.setDelegate(reader);
+
         return itemReader;
     }
 
@@ -69,13 +66,10 @@ public class BatchConfig {
         lineTokenizer.setDelimiter(",");
         lineTokenizer.setStrict(false);
         lineTokenizer.setNames("id", "firstname", "lastname", "email");
-
         BeanWrapperFieldSetMapper<Student> fieldSetMapper = new BeanWrapperFieldSetMapper<>();
         fieldSetMapper.setTargetType(Student.class);
-
         lineMapper.setLineTokenizer(lineTokenizer);
         lineMapper.setFieldSetMapper(fieldSetMapper);
-
         return lineMapper;
     }
 
@@ -100,31 +94,14 @@ public class BatchConfig {
                 .processor(processor())
                 .writer(writer())
                 .faultTolerant()
-                .retryLimit(5) // Retry limit for the step
+                .skip(Exception.class)
+                .retryLimit(10) // Retry limit for the step
                 .retry(CannotAcquireLockException.class)
+                // .skipLimit(10) // Add this to skip up to 10 items if necessary
+                .listener(skipListener())
                 .taskExecutor(taskExecutor())
                 .build();
     }
-
-    // @Bean
-    // public Step importStep(@Value("#{jobParameters['fullPathFileName']}") String
-    // pathToFile) {
-    // RetryTemplate retryTemplate = new RetryTemplate();
-    // SimpleRetryPolicy retryPolicy = new SimpleRetryPolicy();
-    // retryPolicy.setMaxAttempts(5); // Retry up to 5 times
-    // retryTemplate.setRetryPolicy(retryPolicy);
-
-    // return new StepBuilder("csvImport", jobRepository)
-    // .<Student, Student>chunk(10, platformTransactionManager)
-    // .reader(itemReader(pathToFile))
-    // .processor(processor())
-    // .writer(writer())
-    // .faultTolerant()
-    // .retryLimit(5) // Retry limit for the step
-    // .retry(CannotAcquireLockException.class)
-    // .taskExecutor(taskExecutor())
-    // .build();
-    // }
 
     @Bean
     public Job runJob() {
@@ -133,111 +110,51 @@ public class BatchConfig {
                 .build();
     }
 
+    // ! till now i send data in synchornous mode;
+
     @Bean
     public TaskExecutor taskExecutor() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(5); // Minimum number of threads to keep alive
-        executor.setMaxPoolSize(10); // Maximum number of threads
-        executor.setQueueCapacity(25); // Capacity of the queue for tasks
-        executor.initialize(); // Initialize the executor
-        return executor;
+        return new SyncTaskExecutor(); // Synchronous execution
     }
 
     // @Bean
     // public TaskExecutor taskExecutor() {
-    // SimpleAsyncTaskExecutor asyncTaskExecutor = new SimpleAsyncTaskExecutor();
-    // asyncTaskExecutor.setConcurrencyLimit(10);
-    // return asyncTaskExecutor;
+    // ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    // executor.setCorePoolSize(5); // Minimum number of threads to keep alive
+    // executor.setMaxPoolSize(10); // Maximum number of threads
+    // executor.setQueueCapacity(25); // Capacity of the queue for tasks
+    // executor.initialize(); // Initialize the executor
+    // return executor;
     // }
 
-    // ! rendom code
-
-    // // @Bean
-    // public FlatFileItemReader<Student> itemReader(String pathToFile) {
-
-    // FlatFileItemReader<Student> itemReader = new FlatFileItemReader<>();
-    // itemReader.setResource(new FileSystemResource(pathToFile));
-    // itemReader.setName("csvReader");
-    // itemReader.setLinesToSkip(1);
-    // itemReader.setStrict(false);
-    // itemReader.setLineMapper(lineMapper());
-    // return itemReader;
-
-    // }
-
-    // @Bean
-    // public StudentProcessor processor() {
-    // return new StudentProcessor();
-    // }
-
-    // private LineMapper<Student> lineMapper() {
-
-    // DefaultLineMapper<Student> lineMapper = new DefaultLineMapper<>();
-    // DelimitedLineTokenizer lineTokenizer = new DelimitedLineTokenizer();
-    // lineTokenizer.setDelimiter(",");
-    // lineTokenizer.setStrict(false);
-    // lineTokenizer.setNames("id", "firstname", "lastname", "email");
-    // BeanWrapperFieldSetMapper<Student> fieldSetMapper = new
-    // BeanWrapperFieldSetMapper<>();
-    // fieldSetMapper.setTargetType(Student.class);
-    // lineMapper.setLineTokenizer(lineTokenizer);
-    // lineMapper.setFieldSetMapper(fieldSetMapper);
-    // return lineMapper;
-
-    // }
-
-    // @Bean
-    // public RepositoryItemWriter<Student> writer() {
-    // RepositoryItemWriter<Student> writer = new RepositoryItemWriter<>();
-    // writer.setRepository(studentRepository);
-    // writer.setMethodName("save");
-    // return writer;
-    // }
-
-    // @Bean
-    // public Step importStep() {
-    // RetryTemplate retryTemplate = new RetryTemplate();
-    // SimpleRetryPolicy retryPolicy = new SimpleRetryPolicy();
-    // retryPolicy.setMaxAttempts(5); // Retry up to 5 times
-    // retryTemplate.setRetryPolicy(retryPolicy);
-
-    // return new StepBuilder("csvImport", jobRepository)
-    // .<Student, Student>chunk(10, platformTransactionManager)
-    // .reader(itemReader("")) // Pass the actual file path when executing
-    // .processor(processor())
-    // .writer(writer())
-    // .faultTolerant()
-    // .retryLimit(5) // Retry limit for the step
-    // .retry(CannotAcquireLockException.class) // Retry on lock acquisition failure
-    // .taskExecutor(taskExecutor())
-    // .build();
-    // }
-
-    // // @Bean
-    // // public Step importStep() {
-    // // return new StepBuilder("csvImport", jobRepository)
-    // // .<Student, Student>chunk(10, platformTransactionManager)
-    // // .reader(itemReader(""))
-    // // .processor(processor())
-    // // .writer(writer())
-    // // .taskExecutor(taskExecutor())
-    // // .build();
-
-    // // }
-
-    // @Bean
-    // public Job runJob() {
-    // return new JobBuilder("importStudents", jobRepository)
-    // .start(importStep())
-    // .build();
-
-    // }
-
+    // ! due to this some data is getting lossed;
     // @Bean
     // public TaskExecutor taskExecutor() {
     // SimpleAsyncTaskExecutor asyncTaskExecutor = new SimpleAsyncTaskExecutor();
-    // asyncTaskExecutor.setConcurrencyLimit(10);
+    // asyncTaskExecutor.setConcurrencyLimit(500);
     // return asyncTaskExecutor;
     // }
+
+    // ! skip listner
+
+    @Bean
+    public SkipListener<Student, Student> skipListener() {
+        return new SkipListener<Student, Student>() {
+            @Override
+            public void onSkipInRead(@NonNull Throwable t) {
+                log.error("Skipped during reading: " + t.getMessage());
+            }
+
+            @Override
+            public void onSkipInWrite(@NonNull Student student, @NonNull Throwable t) {
+                log.error("Skipped during writing: " + student);
+            }
+
+            @Override
+            public void onSkipInProcess(@NonNull Student student, @NonNull Throwable t) {
+                log.error("Skipped during processing: " + student);
+            }
+        };
+    }
 
 }
